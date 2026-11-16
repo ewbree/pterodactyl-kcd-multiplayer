@@ -157,6 +157,11 @@ wings `develop`:
 - The stop command `^C` is mapped by Wings to `SIGINT`
   (`environment/docker/power.go`), which is what the server's clean shutdown
   needs — verified as exit code 0 with the database closed.
+- `config.startup`'s `done` entries are **literal substrings** in Wings unless
+  they start with `regex:` (`remote/types.go`, `OutputLineMatcher.Matches`). The
+  egg matches `listening on udp/`, the line printed after the socket is bound.
+  The panel wraps a string value in an array (`EggConfigurationService`), but
+  this egg uses the array form directly.
 - Wings runs the container as the panel's **pterodactyl user**, not the image's
   `container` user, and chowns `/home/container` before each boot when
   `system.check_permissions_on_boot` is on (the default). The installer's

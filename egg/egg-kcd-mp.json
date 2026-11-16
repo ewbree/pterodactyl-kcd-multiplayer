@@ -16,7 +16,7 @@
   "startup": "./KcdMp.Server --port {{SERVER_PORT}}",
   "config": {
     "files": "{}",
-    "startup": "{\"done\":[\"protocol [0-9]+\\\\) starting\"]}",
+    "startup": "{\"done\":[\"listening on udp/\"]}",
     "logs": "{}",
     "stop": "^C"
   },

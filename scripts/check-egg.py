@@ -34,6 +34,12 @@ DOCKER_IMAGE_RE = re.compile(r"^[\w#\./\- ]*\|?~?[\w\./\-:@ ]*$")
 # rule is RFC-based; this is the stricter common form, which is all we need.
 EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 
+# A "done" entry without the "regex:" prefix is a literal substring in Wings
+# (remote/types.go, OutputLineMatcher). These characters only make sense in a
+# regex, so seeing them in an unprefixed entry means the author meant one.
+# Parentheses are excluded: eggs legitimately match literal text such as "Done (".
+REGEX_HINT_RE = re.compile(r"[\[\]\\+*?{}|^$]")
+
 problems = []
 warnings = []
 
@@ -108,13 +114,33 @@ def main(path):
         done = json.loads(startup_json).get("done", [])
     except json.JSONDecodeError:
         done = []
+    # The panel wraps a string in an array (EggConfigurationService), but several
+    # eggs still ship one, so accept both here rather than iterating characters.
+    if isinstance(done, str):
+        done = [done]
     if not done:
         warnings.append("egg.config.startup: no 'done' line; the panel will wait for a timestamp")
-    for pattern in done:
-        try:
-            re.compile(pattern)
-        except re.error as exc:
-            problems.append(f"egg.config.startup.done: {pattern!r} does not compile: {exc}")
+    for entry in done:
+        where = "egg.config.startup.done"
+        if not isinstance(entry, str):
+            problems.append(f"{where}: {entry!r} is not a string")
+            continue
+        # Wings treats an entry as a regex only when it starts with "regex:";
+        # anything else is matched with bytes.Contains against the console chunk.
+        if entry.startswith("regex:"):
+            pattern = entry[len("regex:"):]
+            if not pattern:
+                problems.append(f"{where}: {entry!r} has no pattern after 'regex:'")
+                continue
+            try:
+                re.compile(pattern)
+            except re.error as exc:
+                problems.append(f"{where}: {entry!r} does not compile: {exc}")
+        elif REGEX_HINT_RE.search(entry):
+            problems.append(
+                f"{where}: {entry!r} looks like a regex but has no 'regex:' prefix; "
+                "Wings matches it as a literal substring, so it will never fire"
+            )
 
     scripts = (need(egg, "scripts", "egg", dict) or {}).get("installation", {})
     for key in ("script", "container", "entrypoint"):
