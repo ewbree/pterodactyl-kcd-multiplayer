@@ -71,10 +71,23 @@ download the server from [kcd-mp.com](https://kcd-mp.com/download).
 
 ## Ports
 
-- **UDP `<port>`** — the game. This is the allocation players use.
-- **TCP `<port>`** — `http_status`, the server's JSON status endpoint, on by
-  default. Stock 1.x allocations carry no protocol, so one allocation covers
-  both.
+**UDP only.** The game speaks nothing else, and one allocation is all a server
+needs.
+
+Pterodactyl does not translate ports: Wings publishes allocation `P` as `P` on
+the host and inside the container, and exports it as `SERVER_PORT`. That is why
+the egg starts the server with `--port {{SERVER_PORT}}` — the server binds
+whatever port the panel gave you, so the allocation can be any free UDP port,
+and moving a server to another port needs no file editing.
+
+(`docker run -p 7800:7777/udp` — any host port onto a fixed container port — is
+a Docker feature a Pterodactyl allocation cannot express. Pinning the server to
+7777 inside the container would mean every server must be allocated 7777.)
+
+`http_status` is the one TCP listener: the server opens TCP on the same number
+for its JSON status page. With only UDP published it is reachable from the
+container and the panel only, which is harmless, and `http_status = false` in
+`EXTRA_TOML` removes it entirely.
 
 `[server] network_threads` (several UDP ports for 1000+ players) is deliberately
 not wired into the egg. If you need it, add the extra allocations and set

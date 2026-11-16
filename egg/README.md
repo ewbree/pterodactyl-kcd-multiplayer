@@ -66,13 +66,23 @@ restart — fine if you never edit it by hand, dangerous if you do.
 
 ## Ports
 
-One **UDP** allocation is enough: the game listens on it, and the `http_status`
-endpoint listens on the same number over TCP. Stock 1.x allocations are not
-protocol-specific, so both are covered.
+**UDP only** — the game speaks nothing else. One allocation is all a server
+needs, and the usual choice is 7777 on both sides (`0.0.0.0:7777/udp →
+7777/udp`), since `[server] port` defaults to 7777 anyway.
 
-The startup command is `./KcdMp.Server --port {{SERVER_PORT}}`, so the
-allocation always wins over `[server] port` in `server.toml` — changing the
-allocation takes effect on the next start, with no file editing.
+Pterodactyl does not translate ports: Wings publishes allocation `P` as `P` on
+the host and in the container, and exports it as `SERVER_PORT`. The startup
+command is `./KcdMp.Server --port {{SERVER_PORT}}`, so the server binds whatever
+the panel allocated — moving a server to another port takes effect on the next
+start with no file editing.
+
+(`docker run -p 7800:7777/udp` is a Docker feature an allocation cannot express:
+pinning the server to 7777 inside would require every server to be allocated
+7777.)
+
+`http_status` opens TCP on the same number for the JSON status page. With only
+UDP published it is reachable from the container and the panel only, which is
+harmless; `http_status = false` in `EXTRA_TOML` removes the listener.
 
 Extra ports are only needed for `[server] network_threads` (thousands of
 players). Add allocations and list them in `EXTRA_TOML` as
