@@ -1,0 +1,12 @@
+# KCD:MP's own files are downloaded from kcd-mp.com and never committed:
+# the server binary, the bundled game modes, and everything under data/.
+server/
+
+# Runtime state and logs
+*.log
+data/
+
+# Archives and local test leftovers
+*.zip
+*.tar.gz
+.DS_Store
