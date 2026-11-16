@@ -25,8 +25,8 @@ download the server from [kcd-mp.com](https://kcd-mp.com/download).
 
 - A Pterodactyl 1.x panel and a node with Docker — nothing else. The server
   does not need the game, .NET, or a desktop environment.
-- One allocation, **UDP** (7777 by default). The same port number serves the
-  optional HTTP status endpoint over TCP.
+- One allocation, **UDP** — 7777 is the usual choice. No TCP allocation is
+  needed; the optional HTTP status endpoint listens inside the container only.
 - Your own copy of the game on **Windows**, if you want the four data exports
   (see [Game data](#game-data)).
 
