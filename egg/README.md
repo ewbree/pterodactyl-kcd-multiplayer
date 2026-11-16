@@ -17,6 +17,27 @@ Two things the import does not set for you:
 `meta.update_url` points at the copy of this egg in the repository, so a panel
 that checks egg updates can tell you when the egg itself changed.
 
+### If you edit the egg
+
+The panel validates the egg model on save, and a validation failure during
+import is returned as a plain **HTTP 500** — not as a field error. Three things
+that trip people up:
+
+- `author` must be an **email address**. A display name there fails
+  `'author' => 'required|string|email'`; put the name in `_comment` instead.
+- `docker_images` values must match the panel's image regex: word characters,
+  `# . / - : @` and spaces, with an optional `label|` prefix.
+- An egg variable may not use a reserved environment name (`SERVER_MEMORY`,
+  `SERVER_IP`, `SERVER_PORT`, `ENV`, `HOME`, `USER`, `STARTUP`, `SERVER_UUID`,
+  `UUID`).
+
+`scripts/check-egg.py` checks all of these, plus the rest of what the importer
+reads, and runs in CI:
+
+```sh
+python3 scripts/check-egg.py
+```
+
 ## Create the server
 
 1. Pick the egg, give it a name, and set **Dedicated IP / Port** to a UDP

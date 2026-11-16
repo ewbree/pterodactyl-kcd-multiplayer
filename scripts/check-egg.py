@@ -19,6 +19,21 @@ CORE_VARS = {
     "P_SERVER_LOCATION", "P_SERVER_UUID", "TZ", "STARTUP",
 }
 
+# EggVariable::RESERVED_ENV_NAMES (pterodactyl/panel 1.x). An egg variable
+# using one of these fails validation on save, which the panel reports as a 500.
+RESERVED_ENV_NAMES = {
+    "SERVER_MEMORY", "SERVER_IP", "SERVER_PORT", "ENV", "HOME", "USER",
+    "STARTUP", "SERVER_UUID", "UUID",
+}
+
+# Egg::$validationRules['docker_images.*'] in the panel, verbatim: the optional
+# "label|" prefix followed by the image reference.
+DOCKER_IMAGE_RE = re.compile(r"^[\w#\./\- ]*\|?~?[\w\./\-:@ ]*$")
+
+# Egg::$validationRules['author'] is 'required|string|email'. Laravel's email
+# rule is RFC-based; this is the stricter common form, which is all we need.
+EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+
 problems = []
 warnings = []
 
@@ -46,6 +61,15 @@ def main(path):
 
     for key in ("name", "author", "startup"):
         need(egg, key, "egg", str)
+    name = egg.get("name", "")
+    if not 1 <= len(name) <= 191:
+        problems.append(f"egg.name: {len(name)} characters; the panel allows 1-191")
+    author = egg.get("author", "")
+    if isinstance(author, str) and not EMAIL_RE.match(author):
+        problems.append(
+            f"egg.author: {author!r} is not an email; the panel's egg model requires one "
+            "(DataValidationException is returned as HTTP 500, not a field error)"
+        )
     need(egg, "description", "egg", str)
     if "features" not in egg:
         problems.append("egg: missing 'features' (null is fine)")
@@ -58,6 +82,14 @@ def main(path):
     for name, image in images.items():
         if not isinstance(image, str) or "/" not in image:
             problems.append(f"egg.docker_images[{name!r}]: expected a registry/repo:tag string")
+            continue
+        if len(image) > 191:
+            problems.append(f"egg.docker_images[{name!r}]: {len(image)} characters; the panel allows 191")
+        if not DOCKER_IMAGE_RE.match(image):
+            problems.append(
+                f"egg.docker_images[{name!r}]: {image!r} fails the panel's image regex "
+                "(allowed: word characters, # . / - : @ and spaces, optional label| prefix)"
+            )
 
     config = need(egg, "config", "egg", dict) or {}
     for key in ("files", "startup", "logs"):
@@ -67,7 +99,9 @@ def main(path):
                 json.loads(raw)
             except json.JSONDecodeError as exc:
                 problems.append(f"egg.config.{key}: not a JSON string: {exc}")
-    need(config, "stop", "egg.config", str)
+    stop = need(config, "stop", "egg.config", str)
+    if isinstance(stop, str) and len(stop) > 191:
+        problems.append(f"egg.config.stop: {len(stop)} characters; the panel allows 191")
 
     startup_json = config.get("startup", "{}")
     try:
@@ -97,9 +131,19 @@ def main(path):
         env = var.get("env_variable", "")
         if not re.fullmatch(r"[A-Z0-9_]+", env):
             problems.append(f"{where}.env_variable: {env!r} is not [A-Z0-9_]+")
+        if len(env) > 191:
+            problems.append(f"{where}.env_variable: {len(env)} characters; the panel allows 191")
+        if env in RESERVED_ENV_NAMES:
+            problems.append(
+                f"{where}.env_variable: {env!r} is reserved by the panel "
+                "(EggVariable::RESERVED_ENV_NAMES) and fails validation on save"
+            )
         if env in seen:
             problems.append(f"{where}.env_variable: {env!r} is a duplicate")
         seen.add(env)
+        var_name = var.get("name", "")
+        if not 1 <= len(var_name) <= 191:
+            problems.append(f"{where}.name: {len(var_name)} characters; the panel allows 1-191")
         field_type = var.get("field_type")
         if field_type not in ("text", "password", "select"):
             problems.append(f"{where}.field_type: {field_type!r} is not a 1.x type")
