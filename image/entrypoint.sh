@@ -10,9 +10,23 @@ if ! command -v dotnet >/dev/null 2>&1; then
   exit 1
 fi
 
+# Keep the server files current with the official releases. This never blocks a
+# start: on any failure the updater leaves the installed files alone, and on a
+# fresh server with AUTO_UPDATE=1 it installs the release instead of asking for
+# an SFTP upload.
+timeout 900 /usr/local/bin/update-server.sh /home/container || \
+  echo "entrypoint: the update check failed; continuing with the installed files." >&2
+
 # A file uploaded over SFTP often arrives without the executable bit.
 if [ -f ./KcdMp.Server ]; then
   chmod +x ./KcdMp.Server 2>/dev/null || true
+fi
+
+if [ ! -f ./KcdMp.Server ]; then
+  echo "entrypoint: KcdMp.Server is missing. Set AUTO_UPDATE=1 to download the" >&2
+  echo "entrypoint: latest release on start, or upload the archive's linux/ folder" >&2
+  echo "entrypoint: to /home/container over SFTP." >&2
+  exit 1
 fi
 
 # Create server.toml on the first boot only. An existing file is never

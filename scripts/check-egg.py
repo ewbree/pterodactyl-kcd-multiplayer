@@ -100,8 +100,26 @@ def main(path):
         if env in seen:
             problems.append(f"{where}.env_variable: {env!r} is a duplicate")
         seen.add(env)
-        if var.get("field_type") not in ("text", "password", "select"):
-            problems.append(f"{where}.field_type: {var.get('field_type')!r} is not a 1.x type")
+        field_type = var.get("field_type")
+        if field_type not in ("text", "password", "select"):
+            problems.append(f"{where}.field_type: {field_type!r} is not a 1.x type")
+        if field_type == "select":
+            # The panel builds the dropdown from the variable's in: rule, so a
+            # select without one renders as an empty list.
+            options = []
+            for rule in str(var.get("rules", "")).split("|"):
+                if rule.startswith("in:"):
+                    options = [
+                        option.strip().strip("\"'")
+                        for option in rule[len("in:"):].split(",")
+                        if option.strip()
+                    ]
+            if not options:
+                problems.append(f"{where}: field_type is select but rules has no in: options")
+            elif var.get("default_value") not in options:
+                problems.append(
+                    f"{where}.default_value: {var.get('default_value')!r} is not one of {options}"
+                )
 
     # Every {{PLACEHOLDER}} in the startup command must resolve.
     for placeholder in set(re.findall(r"\{\{\s*([A-Z0-9_]+)\s*\}\}", egg.get("startup", ""))):

@@ -14,21 +14,26 @@ Two things the import does not set for you:
   lives somewhere else, edit the egg's *Docker Images* field.
 - **Tags.** Imported eggs have none; add whatever your panel uses.
 
+`meta.update_url` points at the copy of this egg in the repository, so a panel
+that checks egg updates can tell you when the egg itself changed.
+
 ## Create the server
 
 1. Pick the egg, give it a name, and set **Dedicated IP / Port** to a UDP
    allocation. The port you choose here becomes `[server] port` in
    `server.toml` — no manual editing, no port mismatch.
 2. Set the variables you care about (see below) and create it.
-3. Upload the server: SFTP the *contents* of the archive's `linux/` folder into
-   `/home/container`. It should end up as
-   `/home/container/KcdMp.Server`, `/home/container/server.toml.example`,
-   `/home/container/gamemodes/`, `/home/container/sdk/`, `/home/container/tools/`.
-4. Start it on the console page.
+3. Start it on the console page. `AUTO_UPDATE=1` downloads the newest release
+   into `/home/container` on the first start; there is no upload step unless you
+   want one.
+4. To upload instead, SFTP the *contents* of the archive's `linux/` folder into
+   `/home/container`. It should end up as `/home/container/KcdMp.Server`,
+   `/home/container/server.toml.example`, `/home/container/gamemodes/`,
+   `/home/container/sdk/`, `/home/container/tools/`. Set `AUTO_UPDATE=0` so the
+   next start does not replace them.
 
-If `KcdMp.Server` is missing the install still succeeds, and the console says so
-on the next start — the egg does not download the archive, because the download
-page has no stable direct URL.
+SFTP stays the way to add game data, custom game modes and anything else of your
+own; the updater only writes files that exist in the release archive.
 
 ## Variables
 
@@ -40,12 +45,15 @@ page has no stable direct URL.
 | `LEVEL` | `klaster` | `klaster`, `trosecko`, `kutnohorsko` |
 | `GAMEMODE` | `gamemodes/freeroam.lua` | `.lua` or compiled `.dll`; empty = built-in freeroam |
 | `KCDMP_ADMINS` | *(empty)* | comma-separated names, e.g. `Henry,Hans` |
-| `KCDMP_MASTER_URL` | `https://kcd-mp.com/server-list` | empty = private server, announced nowhere |
+| `KCDMP_MASTER_URL` | *(empty)* | empty = private server, announced nowhere; `https://kcd-mp.com/server-list` publishes it |
 | `KCDMP_AUDIT_MODE` | `observe` | `observe` logs only, `enforce` takes unexplained items away |
 | `KCDMP_DB_DRIVER` | *(empty)* | `mysql` or `postgres`; empty = the game mode runs without a database |
 | `KCDMP_DB_URL` | *(empty)* | `mysql://user:pass@host:3306/db` |
 | `EXTRA_TOML` | *(empty)* | appended verbatim to the generated `server.toml` |
 | `RENDER_TOML` | `0` | `1` rewrites `server.toml` from these variables on every start |
+| `AUTO_UPDATE` | `1` | `1` installs the newest release on start; `0` never contacts GitHub |
+| `SERVER_VERSION` | `latest` | pin a release (`0.50.0`); with auto-update on, moves to exactly that version |
+| `GITHUB_TOKEN` | *(empty)* | optional; raises GitHub's anonymous API limit on busy nodes |
 
 The `KCDMP_*` variables are read by the server itself and **override the same
 keys in `server.toml`** — the server documents them as the way a panel or
@@ -63,6 +71,27 @@ edited in the panel's file manager is kept forever. That means a later change to
 
 Leaving it at `1` makes the panel own the whole file and discards edits on every
 restart — fine if you never edit it by hand, dangerous if you do.
+
+### About auto-update
+
+`AUTO_UPDATE` renders as a real on/off switch: the panel turns any variable
+whose rules contain `in:0,1` into a `Switch`
+(`resources/scripts/components/server/startup/VariableBox.tsx`), so no boolean
+field type is needed. On every start the entrypoint compares the installed
+`KcdMp.Server` with the release GitHub reports. If they differ it downloads the
+archive, verifies the published SHA-256, and writes only the files that exist in
+the archive — `server.toml`, `data/` and your own modes are never touched.
+
+Failures (no network, rate limit, bad checksum, disk full) are logged and the
+start continues with the files already on disk. `SERVER_VERSION` pins the
+release; see [Updates](../README.md#updates) for the protocol-mismatch caveat
+and the one thing an update cannot do (re-export the game data).
+
+Adding these variables to an egg that already has servers works: the panel
+builds a server's environment from the egg's variables and falls back to each
+variable's default when the server has no stored value
+(`EnvironmentService::handle`), so existing servers pick up `AUTO_UPDATE=1` on
+their next start.
 
 ## Ports
 
@@ -125,3 +154,7 @@ empty unless you confirm/force it, and that is the behaviour you want: uploads
 are not wiped. If it does run, the server files you uploaded stay where they
 are (the installer changes permissions, not contents), and the panel's
 variables remain the source of truth for a regenerated `server.toml`.
+
+Reinstalling does not update the server files either — that is what
+`AUTO_UPDATE` does on the next start, and it needs no reinstall. A reinstall is
+only useful to reset permissions or recreate `data/` and `gamemodes/`.

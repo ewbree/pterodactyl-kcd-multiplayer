@@ -2,12 +2,12 @@
   "_comment": "KCD:MP dedicated server. Import into a Pterodactyl 1.x panel (PTDL_v2). Community-made; not affiliated with the KCD:MP project.",
   "meta": {
     "version": "PTDL_v2",
-    "update_url": null
+    "update_url": "https://raw.githubusercontent.com/ewbree/pterodactyl-kcd-multiplayer/main/egg/egg-kcd-mp.json"
   },
   "exported_at": "2026-11-16T00:00:00+00:00",
   "name": "KCD:MP",
-  "author": "ewbree",
-  "description": "Kingdom Come: Deliverance II multiplayer server. Runs the framework-dependent .NET 10 server from the archive's linux/ folder. Ports are rendered into server.toml on the first start; the panel's variables for admins, the public list, the audit and the game mode's database are passed straight to the server as its KCDMP_* environment variables.",
+  "author": "ewbree a.k.a. Redmiles",
+  "description": "Kingdom Come: Deliverance II multiplayer server. Runs the framework-dependent .NET 10 server from the archive's linux/ folder, downloading it from the official GitHub releases on the first start and keeping it current on later starts when auto-update is on. Ports are rendered into server.toml on the first start; the panel's variables for admins, the public list, the audit and the game mode's database are passed straight to the server as its KCDMP_* environment variables.",
   "features": null,
   "docker_images": {
     "KCD:MP (.NET 10)": "ghcr.io/ewbree/kcdmp:10.0"
@@ -22,7 +22,7 @@
   },
   "scripts": {
     "installation": {
-      "script": "#!/bin/bash\nset -e\ncd /mnt/server\n\n# The server files are uploaded by the owner, not downloaded here: the\n# download page has no stable direct URL. A missing binary is not fatal for\n# the install, but the server will not start until it is there.\nif [ ! -f KcdMp.Server ]; then\n  echo \"KcdMp.Server is missing: upload the contents of the archive's linux/ folder here.\"\nfi\n\nchmod +x KcdMp.Server 2>/dev/null || true\nmkdir -p data gamemodes\n\n# Files created by this root-owned installer must belong to the unprivileged\n# container user afterwards, or the server cannot write data/ or server.log.\nid -u container >/dev/null 2>&1 || useradd -m -d /home/container container\nchown -R container:container /mnt/server\n\necho \"install complete: upload the linux/ folder to /home/container, then start\"\n",
+      "script": "#!/bin/bash\nset -e\ncd /mnt/server\n\n# The server files come from the official GitHub releases. With AUTO_UPDATE=1\n# the first start downloads them; uploading the archive's linux/ folder over\n# SFTP works too, and is the way to supply custom files or a pinned build.\nif [ ! -f KcdMp.Server ]; then\n  echo \"KcdMp.Server is not here yet: AUTO_UPDATE=1 downloads it on the first start, or upload the archive's linux/ folder over SFTP.\"\nfi\n\nchmod +x KcdMp.Server 2>/dev/null || true\nmkdir -p data gamemodes\n\n# Files created by this root-owned installer must belong to the unprivileged\n# container user afterwards, or the server cannot write data/ or server.log.\nid -u container >/dev/null 2>&1 || useradd -m -d /home/container container\nchown -R container:container /mnt/server\n\necho \"install complete: start the server to download or update the files, or upload them over SFTP\"\n",
       "container": "debian:bookworm-slim",
       "entrypoint": "bash"
     }
@@ -90,9 +90,9 @@
     },
     {
       "name": "Master list URL",
-      "description": "The public server list the server announces itself to. Empty makes it a private server that appears nowhere. Sets KCDMP_MASTER_URL and overrides [master] url in server.toml.",
+      "description": "The public server list the server announces itself to. Empty keeps the server private: it appears nowhere and players join by direct connect. Set to https://kcd-mp.com/server-list to publish it. Sets KCDMP_MASTER_URL and overrides [master] url in server.toml.",
       "env_variable": "KCDMP_MASTER_URL",
-      "default_value": "https://kcd-mp.com/server-list",
+      "default_value": "",
       "user_viewable": true,
       "user_editable": true,
       "rules": "nullable|string|max:200",
@@ -147,6 +147,36 @@
       "user_editable": true,
       "rules": "required|in:0,1",
       "field_type": "text"
+    },
+    {
+      "name": "Auto-update server files",
+      "description": "1 checks the official GitHub releases on every start and installs the newest build if it differs from the files on disk. 0 never contacts GitHub and leaves the files alone. Turn it off if you run a custom compiled game mode or a patched binary. server.toml, data/ and your own game modes are never overwritten.",
+      "env_variable": "AUTO_UPDATE",
+      "default_value": "1",
+      "user_viewable": true,
+      "user_editable": true,
+      "rules": "required|in:0,1",
+      "field_type": "text"
+    },
+    {
+      "name": "Server version",
+      "description": "latest follows the newest release. A version such as 0.50.0 pins it: with auto-update on the server moves to exactly that release, including a downgrade, which is the way back if a new release breaks your game mode. With auto-update off this has no effect.",
+      "env_variable": "SERVER_VERSION",
+      "default_value": "latest",
+      "user_viewable": true,
+      "user_editable": true,
+      "rules": "required|string|max:32",
+      "field_type": "text"
+    },
+    {
+      "name": "GitHub token",
+      "description": "Optional, and only used to read release metadata and download the archive. Raises GitHub's anonymous limit of 60 requests an hour per IP, which a node running many servers can reach. A fine-grained token with no scopes is enough.",
+      "env_variable": "GITHUB_TOKEN",
+      "default_value": "",
+      "user_viewable": true,
+      "user_editable": true,
+      "rules": "nullable|string|max:200",
+      "field_type": "password"
     }
   ]
 }

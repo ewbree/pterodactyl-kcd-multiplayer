@@ -7,15 +7,18 @@ No Wine, no Steam, no game install on the node: the KCD:MP server is a
 framework-dependent .NET 10 console program with a Linux build, so a container
 only has to supply the runtime.
 
-Not affiliated with the KCD:MP project. It ships nothing of theirs — you
-download the server from [kcd-mp.com](https://kcd-mp.com/download).
+Not affiliated with the KCD:MP project. It ships nothing of theirs: the
+container downloads the server from the official
+[GitHub releases](https://github.com/dintech-rappy/kcd-mp-releases/releases) on
+first start and verifies the published checksum, or you upload it yourself.
 
 ## What's here
 
 | Path | What it is |
 | --- | --- |
 | `image/Dockerfile` | `mcr.microsoft.com/dotnet/runtime:10.0` + the non-root user Wings expects |
-| `image/entrypoint.sh` | expands `{{VARIABLES}}` in `STARTUP` and `exec`s it, so `^C` reaches the server |
+| `image/entrypoint.sh` | updates the server files, expands `{{VARIABLES}}` in `STARTUP` and `exec`s it, so `^C` reaches the server |
+| `image/update-server.sh` | installs the wanted GitHub release into the volume, checksum first |
 | `image/render-server-toml.sh` | writes a small `server.toml` from panel variables on the first start |
 | `egg/egg-kcd-mp.json` | the egg, importable as-is |
 | `scripts/verify-server.sh` | checksum check for the downloaded archive |
@@ -24,8 +27,9 @@ download the server from [kcd-mp.com](https://kcd-mp.com/download).
 
 ## Requirements
 
-- A Pterodactyl 1.x panel and a node with Docker — nothing else. The server
-  does not need the game, .NET, or a desktop environment.
+- A Pterodactyl 1.x panel and an **amd64** node with Docker — nothing else. The
+  server does not need the game, .NET, or a desktop environment, but the
+  release archive is x86-64 only.
 - One allocation, **UDP** — 7777 is the usual choice. No TCP allocation is
   needed; the optional HTTP status endpoint listens inside the container only.
 - Your own copy of the game on **Windows**, if you want the four data exports
@@ -52,8 +56,14 @@ download the server from [kcd-mp.com](https://kcd-mp.com/download).
    {{SERVER_PORT}}`, so the allocation always wins — even if `server.toml` says
    something else.
 
-4. **Upload the server files.** Download the archive from kcd-mp.com, verify it,
-   extract the `linux/` folder, and SFTP its *contents* into `/home/container`:
+4. **Start it.** With the default `AUTO_UPDATE=1` the first start downloads the
+   newest server release from GitHub, verifies its checksum, unpacks it and
+   starts it — there is nothing to upload first. Watch the first lines of the
+   console: version and protocol number, the `update:` lines, tick rate, the
+   loaded game mode, and one line per data file found or missing.
+
+   To supply the files yourself — a custom build, or a version you pin — upload
+   the archive's `linux/` folder and turn auto-update off:
 
    ```sh
    scripts/verify-server.sh ~/Downloads/kcdmp.zip
@@ -63,12 +73,55 @@ download the server from [kcd-mp.com](https://kcd-mp.com/download).
    sftp> put -r /tmp/kcdmp/linux/* .
    ```
 
-   The egg does not download the archive: the download page has no stable
-   direct URL.
+   Set `AUTO_UPDATE=0` in the panel, or the next start will replace those files
+   with the release.
 
-5. **Start it.** Watch the first lines of the console: version and protocol
-   number, tick rate, the loaded game mode, and one line per data file found or
-   missing. Then join with `Direct connect` → `<node address>:<port>`.
+5. **Join** with `Direct connect` → `<node address>:<port>`. The launcher and
+   the server must be on the same KCD:MP release; a mismatch is refused at the
+   protocol step and looks like a failed join.
+
+## Updates
+
+The image is only the .NET runtime; the server files live on the volume and are
+updated separately. On every start, when `AUTO_UPDATE=1` (the default), the
+entrypoint asks GitHub for the newest release of
+[dintech-rappy/kcd-mp-releases](https://github.com/dintech-rappy/kcd-mp-releases/releases),
+compares it with `./KcdMp.Server --version`, and installs the archive when the
+versions differ.
+
+- The archive's SHA-256 is checked against the hash published with the release
+  before anything is unpacked.
+- Only files present in the archive are written. `server.toml`, `server.log`,
+  `data/` and any `.lua` or `.dll` you added are untouched, and nothing is
+  deleted.
+- Afterwards the binary is asked for its version again. If that does not match
+  the release, the previous files are restored and the server starts anyway.
+- Any failure — GitHub unreachable, rate limited, bad checksum, full disk — is
+  logged and the start continues with what is on disk. The updater never blocks
+  a start.
+
+`SERVER_VERSION` pins a release: `latest` (default), or something like
+`0.50.0`. A pin with auto-update on moves to exactly that release, downgrades
+included, which is the way back if a new release breaks your game mode. A pin
+that already matches what is installed makes no API call at all.
+
+When a release changes the protocol number, the log says so:
+
+```
+update: installed 0.51.0 (was 0.50.0)
+update: protocol 123 -> protocol 124: players must update their launcher before they can join
+```
+
+That is the one caveat of auto-update: the server can move before your players
+do, and an old launcher is refused at the protocol step. Set `AUTO_UPDATE=0`
+(and optionally `SERVER_VERSION`) if you would rather choose the moment.
+
+Two things it cannot do: the game-data exports (`data/combat/items.json` and the
+per-level heightmap, navmesh and collision) still have to be re-exported on
+Windows and uploaded after an update, and the archive is x86-64 only. GitHub
+allows 60 anonymous API requests an hour per IP and the check uses one per
+start; the optional `GITHUB_TOKEN` panel variable lifts that for nodes with many
+servers.
 
 ## Ports
 
@@ -109,6 +162,9 @@ parser, so the two halves are split:
   which win over the file: `KCDMP_ADMINS`, `KCDMP_MASTER_URL`,
   `KCDMP_AUDIT_MODE`, `KCDMP_DB_DRIVER`, `KCDMP_DB_URL`.
 
+`KCDMP_MASTER_URL` is empty by default, so a new server is private and appears
+on no list until you set it to `https://kcd-mp.com/server-list`.
+
 An existing `server.toml` is **never** rewritten, so edits made in the file
 manager survive restarts. Set `RENDER_TOML=1` to regenerate it from the panel
 variables — that discards those edits, and it happens on every start until you
@@ -138,6 +194,16 @@ updates — but a *reinstall* of the server is a different story, see
 [egg/README.md](egg/README.md).
 
 ## Troubleshooting
+
+**"KcdMp.Server is missing" on the first start.** `AUTO_UPDATE=0` and nothing
+uploaded yet. Either upload the archive's `linux/` folder over SFTP, or set
+`AUTO_UPDATE=1` and restart.
+
+**A new image was pushed but the server still runs the old one.** Wings pulls
+the image only when it creates the container and reuses an existing one. Stop
+the server, remove its container on the node (`docker rm <uuid>`), and start
+it again — the files on the volume are untouched. Updating the *server files*
+does not need this; that is the updater's job.
 
 **Panel stuck at "Starting", console shows nothing.** The startup detection
 matches the real first line,
@@ -179,7 +245,7 @@ egg passes `--port` explicitly.
 | --- | --- |
 | `KcdMp.Server` | 0.50.0, protocol 123 |
 | .NET runtime in the image | `Microsoft.NETCore.App` 10.0.15 |
-| Base image | `mcr.microsoft.com/dotnet/runtime:10.0`, 311 MB unpacked |
+| Base image | `mcr.microsoft.com/dotnet/runtime:10.0`, 321 MB unpacked |
 | Pterodactyl | egg schema `PTDL_v2` |
 | Docker | 29.10.0 on Ubuntu 26.04 (WSL2), overlayfs, cgroup v2 |
 
@@ -196,6 +262,14 @@ the egg's `^C` stop sends — shuts down cleanly with exit code 0:
 
 The server also reads commands from stdin, so the panel's console accepts
 `help`, `say`, `reload` and the rest directly.
+
+Auto-update was exercised against the real release API and a local fake release
+endpoint: up to date (no download, files byte-identical), an empty volume
+bootstrapping 0.50.0 and starting, `AUTO_UPDATE=0` with no network, an
+unreachable API, a pinned version (no API call) and an unknown one, a doctored
+checksum (refused), a release whose binary reports the wrong version (rolled
+back), and an update from a stub 0.49.0 over a volume holding a custom game
+mode, `data/combat/items.json` and an edited `server.toml` — all three survived.
 
 ## Credits
 

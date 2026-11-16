@@ -17,9 +17,12 @@ LABEL org.opencontainers.image.licenses="MIT"
 ENV DEBIAN_FRONTEND=noninteractive
 
 # tini reaps zombies and forwards signals, passwd provides useradd for the
-# non-root user Wings expects.
+# non-root user Wings expects. curl and unzip fetch and unpack the server
+# release, jq reads the GitHub release metadata (parsing JSON with sed is the
+# kind of thing that breaks silently).
 RUN apt-get update \
- && apt-get install -y --no-install-recommends ca-certificates tzdata iproute2 tini passwd \
+ && apt-get install -y --no-install-recommends \
+      ca-certificates tzdata iproute2 tini passwd curl unzip jq \
  && rm -rf /var/lib/apt/lists/* \
  && useradd -m -d /home/container container \
  && chown container:container /home/container
@@ -30,6 +33,7 @@ WORKDIR /home/container
 
 COPY --chmod=755 ./entrypoint.sh /usr/local/bin/entrypoint.sh
 COPY --chmod=755 ./render-server-toml.sh /usr/local/bin/render-server-toml.sh
+COPY --chmod=755 ./update-server.sh /usr/local/bin/update-server.sh
 
 ENTRYPOINT ["/usr/bin/tini", "-g", "--"]
 CMD ["/usr/local/bin/entrypoint.sh"]
