@@ -17,6 +17,30 @@ Two things the import does not set for you:
 `meta.update_url` points at the copy of this egg in the repository, so a panel
 that checks egg updates can tell you when the egg itself changed.
 
+### If you edit the egg
+
+The panel validates the egg model on save, and a validation failure during
+import is returned as a plain **HTTP 500** — not as a field error. Three things
+that trip people up:
+
+- `author` must be an **email address**. A display name there fails
+  `'author' => 'required|string|email'`; put the name in `_comment` instead.
+- `docker_images` values must match the panel's image regex: word characters,
+  `# . / - : @` and spaces, with an optional `label|` prefix. The admin form
+  also validates the display label separately; it allows only word characters,
+  `# . / -` and spaces. For example, `KCD-MP .NET 10` is valid, but
+  `KCD:MP (.NET 10)` is not.
+- An egg variable may not use a reserved environment name (`SERVER_MEMORY`,
+  `SERVER_IP`, `SERVER_PORT`, `ENV`, `HOME`, `USER`, `STARTUP`, `SERVER_UUID`,
+  `UUID`).
+
+`scripts/check-egg.py` checks all of these, plus the rest of what the importer
+reads, and runs in CI:
+
+```sh
+python3 scripts/check-egg.py
+```
+
 ## Create the server
 
 1. Pick the egg, give it a name, and set **Dedicated IP / Port** to a UDP
@@ -136,6 +160,11 @@ wings `develop`:
 - The stop command `^C` is mapped by Wings to `SIGINT`
   (`environment/docker/power.go`), which is what the server's clean shutdown
   needs — verified as exit code 0 with the database closed.
+- `config.startup`'s `done` entries are **literal substrings** in Wings unless
+  they start with `regex:` (`remote/types.go`, `OutputLineMatcher.Matches`). The
+  egg matches `listening on udp/`, the line printed after the socket is bound.
+  The panel wraps a string value in an array (`EggConfigurationService`), but
+  this egg uses the array form directly.
 - Wings runs the container as the panel's **pterodactyl user**, not the image's
   `container` user, and chowns `/home/container` before each boot when
   `system.check_permissions_on_boot` is on (the default). The installer's

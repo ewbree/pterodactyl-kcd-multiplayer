@@ -205,12 +205,14 @@ the server, remove its container on the node (`docker rm <uuid>`), and start
 it again — the files on the volume are untouched. Updating the *server files*
 does not need this; that is the updater's job.
 
-**Panel stuck at "Starting", console shows nothing.** The startup detection
-matches the real first line,
-`KcdMp.Server 0.50.0 (protocol 123) starting: ...`, as
-`protocol [0-9]+\) starting`. If a release rewords that line, the panel never
-sees the server as ready even though it is running. Compare with the actual line
-in the console and adjust the egg's *Startup Detection*.
+**Panel stuck at "Starting" while the console shows the server running.**
+Startup detection is matching nothing. Wings treats each `done` entry as a
+**literal substring** unless it begins with `regex:` — the prefix is not
+optional sugar, it selects the matcher. The egg matches `listening on udp/`, the
+line the server prints once its socket is bound. If a release rewords that line
+the panel never marks the server ready, even though it runs: compare with the
+actual console line and edit the egg's *Startup Detection*, or switch the entry
+to `regex:` and a pattern for the line you see.
 
 **Exit code 3 / crash loop.** Expected behaviour, not a bug: `[server]
 stall_exit = 30` makes a server that cannot send or receive for 30 seconds end

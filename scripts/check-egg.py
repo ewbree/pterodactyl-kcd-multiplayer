@@ -19,6 +19,34 @@ CORE_VARS = {
     "P_SERVER_LOCATION", "P_SERVER_UUID", "TZ", "STARTUP",
 }
 
+# EggVariable::RESERVED_ENV_NAMES (pterodactyl/panel 1.x). An egg variable
+# using one of these fails validation on save, which the panel reports as a 500.
+RESERVED_ENV_NAMES = {
+    "SERVER_MEMORY", "SERVER_IP", "SERVER_PORT", "ENV", "HOME", "USER",
+    "STARTUP", "SERVER_UUID", "UUID",
+}
+
+# Egg::$validationRules['docker_images.*'] in the panel, verbatim: the optional
+# "label|" prefix followed by the image reference.
+DOCKER_IMAGE_RE = re.compile(r"^[\w#\./\- ]*\|?~?[\w\./\-:@ ]*$")
+
+# EggFormRequest validates the newline-separated Docker Images field before the
+# controller converts each line to a label => image map. Its label portion does
+# not allow punctuation such as parentheses or a colon.
+DOCKER_IMAGE_FORM_RE = re.compile(
+    r"^[\w#\.\/\- ]*\|*[\w\.\/\-:@ ]*$", re.IGNORECASE | re.MULTILINE
+)
+
+# Egg::$validationRules['author'] is 'required|string|email'. Laravel's email
+# rule is RFC-based; this is the stricter common form, which is all we need.
+EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+
+# A "done" entry without the "regex:" prefix is a literal substring in Wings
+# (remote/types.go, OutputLineMatcher). These characters only make sense in a
+# regex, so seeing them in an unprefixed entry means the author meant one.
+# Parentheses are excluded: eggs legitimately match literal text such as "Done (".
+REGEX_HINT_RE = re.compile(r"[\[\]\\+*?{}|^$]")
+
 problems = []
 warnings = []
 
@@ -46,6 +74,15 @@ def main(path):
 
     for key in ("name", "author", "startup"):
         need(egg, key, "egg", str)
+    name = egg.get("name", "")
+    if not 1 <= len(name) <= 191:
+        problems.append(f"egg.name: {len(name)} characters; the panel allows 1-191")
+    author = egg.get("author", "")
+    if isinstance(author, str) and not EMAIL_RE.match(author):
+        problems.append(
+            f"egg.author: {author!r} is not an email; the panel's egg model requires one "
+            "(DataValidationException is returned as HTTP 500, not a field error)"
+        )
     need(egg, "description", "egg", str)
     if "features" not in egg:
         problems.append("egg: missing 'features' (null is fine)")
@@ -58,6 +95,20 @@ def main(path):
     for name, image in images.items():
         if not isinstance(image, str) or "/" not in image:
             problems.append(f"egg.docker_images[{name!r}]: expected a registry/repo:tag string")
+            continue
+        if len(image) > 191:
+            problems.append(f"egg.docker_images[{name!r}]: {len(image)} characters; the panel allows 191")
+        if not DOCKER_IMAGE_RE.match(image):
+            problems.append(
+                f"egg.docker_images[{name!r}]: {image!r} fails the panel's image regex "
+                "(allowed: word characters, # . / - : @ and spaces, optional label| prefix)"
+            )
+        form_entry = image if name == image else f"{name}|{image}"
+        if not DOCKER_IMAGE_FORM_RE.fullmatch(form_entry):
+            problems.append(
+                f"egg.docker_images[{name!r}]: {form_entry!r} fails the panel's Docker Images "
+                "form validation; labels allow only word characters, #, ., /, -, and spaces"
+            )
 
     config = need(egg, "config", "egg", dict) or {}
     for key in ("files", "startup", "logs"):
@@ -67,20 +118,42 @@ def main(path):
                 json.loads(raw)
             except json.JSONDecodeError as exc:
                 problems.append(f"egg.config.{key}: not a JSON string: {exc}")
-    need(config, "stop", "egg.config", str)
+    stop = need(config, "stop", "egg.config", str)
+    if isinstance(stop, str) and len(stop) > 191:
+        problems.append(f"egg.config.stop: {len(stop)} characters; the panel allows 191")
 
     startup_json = config.get("startup", "{}")
     try:
         done = json.loads(startup_json).get("done", [])
     except json.JSONDecodeError:
         done = []
+    # The panel wraps a string in an array (EggConfigurationService), but several
+    # eggs still ship one, so accept both here rather than iterating characters.
+    if isinstance(done, str):
+        done = [done]
     if not done:
         warnings.append("egg.config.startup: no 'done' line; the panel will wait for a timestamp")
-    for pattern in done:
-        try:
-            re.compile(pattern)
-        except re.error as exc:
-            problems.append(f"egg.config.startup.done: {pattern!r} does not compile: {exc}")
+    for entry in done:
+        where = "egg.config.startup.done"
+        if not isinstance(entry, str):
+            problems.append(f"{where}: {entry!r} is not a string")
+            continue
+        # Wings treats an entry as a regex only when it starts with "regex:";
+        # anything else is matched with bytes.Contains against the console chunk.
+        if entry.startswith("regex:"):
+            pattern = entry[len("regex:"):]
+            if not pattern:
+                problems.append(f"{where}: {entry!r} has no pattern after 'regex:'")
+                continue
+            try:
+                re.compile(pattern)
+            except re.error as exc:
+                problems.append(f"{where}: {entry!r} does not compile: {exc}")
+        elif REGEX_HINT_RE.search(entry):
+            problems.append(
+                f"{where}: {entry!r} looks like a regex but has no 'regex:' prefix; "
+                "Wings matches it as a literal substring, so it will never fire"
+            )
 
     scripts = (need(egg, "scripts", "egg", dict) or {}).get("installation", {})
     for key in ("script", "container", "entrypoint"):
@@ -97,9 +170,19 @@ def main(path):
         env = var.get("env_variable", "")
         if not re.fullmatch(r"[A-Z0-9_]+", env):
             problems.append(f"{where}.env_variable: {env!r} is not [A-Z0-9_]+")
+        if len(env) > 191:
+            problems.append(f"{where}.env_variable: {len(env)} characters; the panel allows 191")
+        if env in RESERVED_ENV_NAMES:
+            problems.append(
+                f"{where}.env_variable: {env!r} is reserved by the panel "
+                "(EggVariable::RESERVED_ENV_NAMES) and fails validation on save"
+            )
         if env in seen:
             problems.append(f"{where}.env_variable: {env!r} is a duplicate")
         seen.add(env)
+        var_name = var.get("name", "")
+        if not 1 <= len(var_name) <= 191:
+            problems.append(f"{where}.name: {len(var_name)} characters; the panel allows 1-191")
         field_type = var.get("field_type")
         if field_type not in ("text", "password", "select"):
             problems.append(f"{where}.field_type: {field_type!r} is not a 1.x type")
