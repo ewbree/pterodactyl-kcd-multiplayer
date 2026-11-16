@@ -21,7 +21,8 @@ ENV DEBIAN_FRONTEND=noninteractive
 RUN apt-get update \
  && apt-get install -y --no-install-recommends ca-certificates tzdata iproute2 tini passwd \
  && rm -rf /var/lib/apt/lists/* \
- && useradd -m -d /home/container container
+ && useradd -m -d /home/container container \
+ && chown container:container /home/container
 
 USER container
 ENV USER=container HOME=/home/container

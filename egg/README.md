@@ -88,6 +88,32 @@ Extra ports are only needed for `[server] network_threads` (thousands of
 players). Add allocations and list them in `EXTRA_TOML` as
 `network_ports = [27016, 27020]`.
 
+## 1.x compliance
+
+Checked against the source rather than from memory — panel `1.0-develop`,
+wings `develop`:
+
+- `EggParserService::fillFromParsed` reads exactly `name`, `description`,
+  `features`, `docker_images` (a map), `file_denylist`, `meta.update_url`,
+  `config.files` / `config.startup` / `config.logs` / `config.stop` (each a JSON
+  **string**), `startup`, and `scripts.installation.script` / `container` /
+  `entrypoint`. All present, all the right shape.
+- `meta.version` must be `PTDL_v1` or `PTDL_v2`. This is `PTDL_v2`, so the
+  panel's v1→v2 conversion (which would rewrite the image list and force
+  `field_type`) is correctly skipped.
+- Variables are created with `EggVariable::forceCreate`, so each carries the
+  columns the model expects, `field_type` included, and `env_variable` is
+  `[A-Z0-9_]+` and unique.
+- The stop command `^C` is mapped by Wings to `SIGINT`
+  (`environment/docker/power.go`), which is what the server's clean shutdown
+  needs — verified as exit code 0 with the database closed.
+- Wings runs the container as the panel's **pterodactyl user**, not the image's
+  `container` user, and chowns `/home/container` before each boot when
+  `system.check_permissions_on_boot` is on (the default). The installer's
+  `chown` is a fallback for nodes that turn that off.
+- `scripts/check-egg.py` asserts all of the above and runs in CI before the
+  image is built.
+
 ## Reinstalling
 
 The install script creates `server.toml`'s directory structure, fixes ownership

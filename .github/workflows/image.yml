@@ -5,6 +5,8 @@ on:
     branches: [main]
     paths:
       - "image/**"
+      - "egg/**"
+      - "scripts/**"
       - ".github/workflows/image.yml"
   workflow_dispatch:
 
@@ -17,6 +19,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
+      - name: Check the egg against Pterodactyl 1.x
+        run: python3 scripts/check-egg.py
 
       - uses: docker/setup-qemu-action@v3
       - uses: docker/setup-buildx-action@v3

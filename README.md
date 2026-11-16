@@ -19,6 +19,7 @@ download the server from [kcd-mp.com](https://kcd-mp.com/download).
 | `image/render-server-toml.sh` | writes a small `server.toml` from panel variables on the first start |
 | `egg/egg-kcd-mp.json` | the egg, importable as-is |
 | `scripts/verify-server.sh` | checksum check for the downloaded archive |
+| `scripts/check-egg.py` | asserts the egg matches what the 1.x importer reads (runs in CI) |
 | `.github/workflows/image.yml` | builds `ghcr.io/<owner>/kcdmp:10.0` on every push to `main` |
 
 ## Requirements
