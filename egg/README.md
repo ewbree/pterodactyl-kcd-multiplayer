@@ -26,7 +26,10 @@ that trip people up:
 - `author` must be an **email address**. A display name there fails
   `'author' => 'required|string|email'`; put the name in `_comment` instead.
 - `docker_images` values must match the panel's image regex: word characters,
-  `# . / - : @` and spaces, with an optional `label|` prefix.
+  `# . / - : @` and spaces, with an optional `label|` prefix. The admin form
+  also validates the display label separately; it allows only word characters,
+  `# . / -` and spaces. For example, `KCD-MP .NET 10` is valid, but
+  `KCD:MP (.NET 10)` is not.
 - An egg variable may not use a reserved environment name (`SERVER_MEMORY`,
   `SERVER_IP`, `SERVER_PORT`, `ENV`, `HOME`, `USER`, `STARTUP`, `SERVER_UUID`,
   `UUID`).

@@ -30,6 +30,13 @@ RESERVED_ENV_NAMES = {
 # "label|" prefix followed by the image reference.
 DOCKER_IMAGE_RE = re.compile(r"^[\w#\./\- ]*\|?~?[\w\./\-:@ ]*$")
 
+# EggFormRequest validates the newline-separated Docker Images field before the
+# controller converts each line to a label => image map. Its label portion does
+# not allow punctuation such as parentheses or a colon.
+DOCKER_IMAGE_FORM_RE = re.compile(
+    r"^[\w#\.\/\- ]*\|*[\w\.\/\-:@ ]*$", re.IGNORECASE | re.MULTILINE
+)
+
 # Egg::$validationRules['author'] is 'required|string|email'. Laravel's email
 # rule is RFC-based; this is the stricter common form, which is all we need.
 EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
@@ -95,6 +102,12 @@ def main(path):
             problems.append(
                 f"egg.docker_images[{name!r}]: {image!r} fails the panel's image regex "
                 "(allowed: word characters, # . / - : @ and spaces, optional label| prefix)"
+            )
+        form_entry = image if name == image else f"{name}|{image}"
+        if not DOCKER_IMAGE_FORM_RE.fullmatch(form_entry):
+            problems.append(
+                f"egg.docker_images[{name!r}]: {form_entry!r} fails the panel's Docker Images "
+                "form validation; labels allow only word characters, #, ., /, -, and spaces"
             )
 
     config = need(egg, "config", "egg", dict) or {}

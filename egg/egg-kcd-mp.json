@@ -10,7 +10,7 @@
   "description": "Kingdom Come: Deliverance II multiplayer server. Runs the framework-dependent .NET 10 server from the archive's linux/ folder, downloading it from the official GitHub releases on the first start and keeping it current on later starts when auto-update is on. Ports are rendered into server.toml on the first start; the panel's variables for admins, the public list, the audit and the game mode's database are passed straight to the server as its KCDMP_* environment variables.",
   "features": null,
   "docker_images": {
-    "KCD:MP (.NET 10)": "ghcr.io/ewbree/kcdmp:10.0"
+    "KCD-MP .NET 10": "ghcr.io/ewbree/kcdmp:10.0"
   },
   "file_denylist": [],
   "startup": "./KcdMp.Server --port {{SERVER_PORT}}",
