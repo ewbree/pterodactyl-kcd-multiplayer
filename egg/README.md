@@ -20,7 +20,7 @@ that checks egg updates can tell you when the egg itself changed.
 ### If you edit the egg
 
 The panel validates the egg model on save, and a validation failure during
-import is returned as a plain **HTTP 500** — not as a field error. Three things
+import is returned as a plain **HTTP 500** — not as a field error. Four things
 that trip people up:
 
 - `author` must be an **email address**. A display name there fails
@@ -33,6 +33,9 @@ that trip people up:
 - An egg variable may not use a reserved environment name (`SERVER_MEMORY`,
   `SERVER_IP`, `SERVER_PORT`, `ENV`, `HOME`, `USER`, `STARTUP`, `SERVER_UUID`,
   `UUID`).
+- A variable that only writes `server.toml` must keep `user_viewable` and
+  `user_editable` false, and a run-time variable must be viewable. The checker
+  enforces that split, plus the rule that the renderer reads nothing else.
 
 `scripts/check-egg.py` checks all of these, plus the rest of what the importer
 reads, and runs in CI:
@@ -46,7 +49,9 @@ python3 scripts/check-egg.py
 1. Pick the egg, give it a name, and set **Dedicated IP / Port** to a UDP
    allocation. The port you choose here becomes `[server] port` in
    `server.toml` — no manual editing, no port mismatch.
-2. Set the variables you care about (see below) and create it.
+2. Set the creation-time variables — name, password, slots, level, game mode —
+   and create it. The rest stay editable in the Startup tab afterwards; the
+   five are written into `server.toml` once and then left to the file.
 3. Start it on the console page. `AUTO_UPDATE=1` downloads the newest release
    into `/home/container` on the first start; there is no upload step unless you
    want one.
@@ -61,40 +66,51 @@ own; the updater only writes files that exist in the release archive.
 
 ## Variables
 
+### Set when the server is created
+
+These five are asked for on the creation form. They are written into
+`server.toml` on the first start and then hidden from the server's Startup tab;
+change them in `server.toml` afterwards.
+
+| Variable | Default | Written to |
+| --- | --- | --- |
+| `SERVER_NAME` | `KCD:MP server` | `[server] name`, shown in the launcher and the public list |
+| `SERVER_PASSWORD` | *(empty)* | `[server] password`; empty = open server |
+| `MAX_PLAYERS` | `32` | `[server] max_players`; ids run to this minus one |
+| `LEVEL` | `klaster` | `[server] level`: `klaster`, `trosecko`, `kutnohorsko` |
+| `GAMEMODE` | `gamemodes/freeroam.lua` | `[gamemode] script`; `.lua` or compiled `.dll`, empty = built-in freeroam |
+
+### Available while it runs
+
+Passed to the server as environment variables on every start, and editable in
+the Startup tab. None of them is ever written into `server.toml`.
+
 | Variable | Default | Notes |
 | --- | --- | --- |
-| `SERVER_NAME` | `KCD:MP server` | shown in the launcher and the public list |
-| `SERVER_PASSWORD` | *(empty)* | empty = open server |
-| `MAX_PLAYERS` | `32` | slots; ids run to this minus one |
-| `LEVEL` | `klaster` | `klaster`, `trosecko`, `kutnohorsko` |
-| `GAMEMODE` | `gamemodes/freeroam.lua` | `.lua` or compiled `.dll`; empty = built-in freeroam |
 | `KCDMP_ADMINS` | *(empty)* | comma-separated names, e.g. `Henry,Hans` |
 | `KCDMP_MASTER_URL` | *(empty)* | empty = private server, announced nowhere; `https://kcd-mp.com/server-list` publishes it |
 | `KCDMP_AUDIT_MODE` | `observe` | `observe` logs only, `enforce` takes unexplained items away |
 | `KCDMP_DB_DRIVER` | *(empty)* | `mysql` or `postgres`; empty = the game mode runs without a database |
 | `KCDMP_DB_URL` | *(empty)* | `mysql://user:pass@host:3306/db` |
-| `EXTRA_TOML` | *(empty)* | appended verbatim to the generated `server.toml` |
-| `RENDER_TOML` | `0` | `1` rewrites `server.toml` from these variables on every start |
 | `AUTO_UPDATE` | `1` | `1` installs the newest release on start; `0` never contacts GitHub |
 | `SERVER_VERSION` | `latest` | pin a release (`0.50.0`); with auto-update on, moves to exactly that version |
 | `GITHUB_TOKEN` | *(empty)* | optional; raises GitHub's anonymous API limit on busy nodes |
 
 The `KCDMP_*` variables are read by the server itself and **override the same
 keys in `server.toml`** — the server documents them as the way a panel or
-container configures it. Everything else is written into `server.toml` once.
-See "How configuration works" in the [top-level README](../README.md).
+container configures it. See "How configuration works" in the
+[top-level README](../README.md).
 
-### About `RENDER_TOML`
+### About `server.toml`
 
-Published images render `server.toml` only when it does not exist yet, so a file
-edited in the panel's file manager is kept forever. That means a later change to
-`SERVER_NAME` (say) does nothing until you regenerate:
+Published images write `server.toml` only when it does not exist. After that it
+is yours: edit it in the panel's file manager or over SFTP, and nothing in the
+panel overwrites it. Every key the server has is documented in
+`server.toml.example` next to it.
 
-- set `RENDER_TOML=1`, restart once, then set it back to `0`; or
-- edit `server.toml` directly and skip the panel variables entirely.
-
-Leaving it at `1` makes the panel own the whole file and discards edits on every
-restart — fine if you never edit it by hand, dangerous if you do.
+Deleting the file does not strand the server: the next start writes it again
+from the values the server was created with. Those stay in the panel's database
+as that fallback, which is why hiding them from the Startup tab loses nothing.
 
 ### About auto-update
 
@@ -135,10 +151,10 @@ pinning the server to 7777 inside would require every server to be allocated
 
 `http_status` opens TCP on the same number for the JSON status page. With only
 UDP published it is reachable from the container and the panel only, which is
-harmless; `http_status = false` in `EXTRA_TOML` removes the listener.
+harmless; `http_status = false` under `[server]` removes the listener.
 
 Extra ports are only needed for `[server] network_threads` (thousands of
-players). Add allocations and list them in `EXTRA_TOML` as
+players). Add allocations and list them under `[server]` in `server.toml` as
 `network_ports = [27016, 27020]`.
 
 ## 1.x compliance
@@ -169,6 +185,13 @@ wings `develop`:
   `container` user, and chowns `/home/container` before each boot when
   `system.check_permissions_on_boot` is on (the default). The installer's
   `chown` is a fallback for nodes that turn that off.
+- A variable that only feeds `server.toml` is hidden after creation with
+  `user_viewable: false` / `user_editable: false`. The panel's admin create form
+  renders every egg variable (`public/themes/pterodactyl/js/admin/new-server.js`)
+  while the server's Startup tab lists only `user_viewable` ones and refuses to
+  edit the rest (`StartupController`), so the same variable is a creation field
+  and nothing else afterwards. Note that the **admin** server page still shows
+  them: `ServerViewController::startup` passes every variable to the blade.
 - `scripts/check-egg.py` asserts all of the above and runs in CI before the
   image is built.
 
@@ -181,8 +204,8 @@ and the executable bit, and touches nothing else — it never deletes your
 1.x's **Reinstall Server** refuses to run when the server directory is not
 empty unless you confirm/force it, and that is the behaviour you want: uploads
 are not wiped. If it does run, the server files you uploaded stay where they
-are (the installer changes permissions, not contents), and the panel's
-variables remain the source of truth for a regenerated `server.toml`.
+are (the installer changes permissions, not contents), and the settings the
+server was created with remain the fallback for a regenerated `server.toml`.
 
 Reinstalling does not update the server files either — that is what
 `AUTO_UPDATE` does on the next start, and it needs no reinstall. A reinstall is

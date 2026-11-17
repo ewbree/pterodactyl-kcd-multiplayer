@@ -1,19 +1,21 @@
 #!/bin/sh
-# Write a small server.toml from the panel's variables, on the first start.
+# Write server.toml from the server's creation settings, on the first start.
 #
 # KCD:MP reads server.toml itself, and Pterodactyl has no TOML config parser,
 # so the file is rendered here instead. It carries only the handful of keys the
-# panel exposes; the server's own defaults cover everything else, and
-# server.toml.example next to it documents every key.
+# panel asked for at creation; the server's own defaults cover everything else,
+# and server.toml.example next to it documents every key.
 #
-# An existing server.toml is left untouched. Set RENDER_TOML=1 to regenerate.
+# This runs only when the file is missing. Once it exists it belongs to the
+# owner: edit it in the panel's file manager or over SFTP. Delete it to have it
+# written again from the creation settings, which the panel still holds.
 set -eu
 
 DIR="${1:-/home/container}"
 TOML="$DIR/server.toml"
 
-if [ -f "$TOML" ] && [ "${RENDER_TOML:-0}" != "1" ]; then
-  echo "render-server-toml: server.toml exists, leaving it alone (RENDER_TOML=1 regenerates it)"
+if [ -f "$TOML" ]; then
+  echo "render-server-toml: server.toml exists, leaving it alone"
   exit 0
 fi
 
@@ -34,7 +36,7 @@ PORT="$(digits "${SERVER_PORT:-}" 7777)"
 MAX="$(digits "${MAX_PLAYERS:-}" 32)"
 NAME="$(esc "${SERVER_NAME:-KCD:MP server}")"
 PASS="$(esc "${SERVER_PASSWORD:-}")"
-LEVEL="$(esc "${LEVEL:-klaster}")"
+TOML_LEVEL="$(esc "${LEVEL:-klaster}")"
 # ${VAR-default} rather than ${VAR:-default}: an empty GAMEMODE means the
 # server's built-in freeroam mode, which is a legitimate choice.
 MODE="$(esc "${GAMEMODE-gamemodes/freeroam.lua}")"
@@ -43,28 +45,26 @@ umask 022
 cat > "$TOML" <<EOF
 # server.toml - created by pterodactyl-kcd-multiplayer on the first start.
 #
-# This file belongs to you: it is never rewritten unless RENDER_TOML=1 is set.
-# It holds only the keys the panel asks for. Everything else keeps the server's
-# defaults; server.toml.example alongside this file documents every key, and so
-# does https://docs.kcd-mp.com/getting-started/server-config/
+# This file belongs to you: it is never rewritten. Edit it here in the panel's
+# file manager or over SFTP; delete it and the next start writes it again from
+# the settings the server was created with.
 #
-# Variables set in the panel that the server reads straight from the
-# environment are not repeated here: KCDMP_ADMINS, KCDMP_MASTER_URL,
-# KCDMP_AUDIT_MODE, KCDMP_DB_DRIVER and KCDMP_DB_URL.
+# Everything the server offers is documented in server.toml.example alongside
+# this file, and at https://docs.kcd-mp.com/getting-started/server-config/
+#
+# The panel variables that the server reads straight from the environment are
+# not repeated here: KCDMP_ADMINS, KCDMP_MASTER_URL, KCDMP_AUDIT_MODE,
+# KCDMP_DB_DRIVER and KCDMP_DB_URL. Set those in the server's Startup tab.
 
 [server]
 port = ${PORT}
 name = "${NAME}"
 password = "${PASS}"
 max_players = ${MAX}
-level = "${LEVEL}"
+level = "${TOML_LEVEL}"
 
 [gamemode]
 script = "${MODE}"
 EOF
 
-if [ -n "${EXTRA_TOML:-}" ]; then
-  printf '\n# --- appended from EXTRA_TOML ---\n%s\n' "$EXTRA_TOML" >> "$TOML"
-fi
-
-echo "render-server-toml: wrote $TOML (port ${PORT}, ${MAX} slots, level ${LEVEL})"
+echo "render-server-toml: wrote $TOML (port ${PORT}, ${MAX} slots, level ${TOML_LEVEL})"
