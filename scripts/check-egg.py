@@ -4,7 +4,10 @@
 The contract is not a published schema, it is the code: EggParserService and
 EggImporterService in pterodactyl/panel 1.0-develop, and EggVariable's columns.
 This asserts the keys those read exist and have the shapes they expect, so a
-typo fails here instead of as a half-imported egg on someone's panel.
+typo fails here instead of as a half-imported egg on someone's panel. It also
+enforces the egg's own rule: a variable either feeds server.toml when the server
+is created (and is hidden afterwards) or is read from the environment while it
+runs (and stays visible), never both.
 
 Usage: scripts/check-egg.py [path/to/egg.json]
 Exit code 0 when the egg is importable, 1 when it is not.
@@ -12,6 +15,7 @@ Exit code 0 when the egg is importable, 1 when it is not.
 import json
 import re
 import sys
+from pathlib import Path
 
 # Environment variables the panel fills in itself, usable as {{...}} in startup.
 CORE_VARS = {
@@ -46,6 +50,26 @@ EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 # regex, so seeing them in an unprefixed entry means the author meant one.
 # Parentheses are excluded: eggs legitimately match literal text such as "Done (".
 REGEX_HINT_RE = re.compile(r"[\[\]\\+*?{}|^$]")
+
+# How the egg divides its variables, and why it matters:
+#
+# - The panel's admin create form renders EVERY egg variable (new-server.js),
+#   but a server's Startup tab lists only those with user_viewable=true
+#   (StartupController::index), and refuses to edit the rest.
+#   So a variable that only feeds server.toml is set at creation and hidden
+#   afterwards, which leaves the file as the one place that config lives.
+# - Everything else is read from the environment at run time and stays visible.
+SETUP_ONLY = {
+    "SERVER_NAME", "SERVER_PASSWORD", "MAX_PLAYERS", "LEVEL", "GAMEMODE",
+}
+RUNTIME = {
+    "AUTO_UPDATE", "SERVER_VERSION", "GITHUB_TOKEN",
+    "KCDMP_ADMINS", "KCDMP_MASTER_URL", "KCDMP_AUDIT_MODE",
+    "KCDMP_DB_DRIVER", "KCDMP_DB_URL",
+}
+# Variables that existed to regenerate server.toml from the panel. The file is
+# the source of truth now, so these must not come back.
+REMOVED = {"RENDER_TOML", "EXTRA_TOML"}
 
 problems = []
 warnings = []
@@ -210,6 +234,57 @@ def main(path):
             problems.append(
                 f"egg.startup: {{{{{placeholder}}}}} is neither a panel variable nor an egg variable"
             )
+
+    # The creation-time / run-time split. Each variable is classified once, and
+    # the flags then decide where the panel shows it.
+    by_env = {var.get("env_variable"): var for var in variables}
+    for env in sorted(REMOVED & set(by_env)):
+        problems.append(
+            f"egg.variables: {env} is back; server.toml is edited in the file manager, "
+            "not regenerated from the panel"
+        )
+    for env in sorted(SETUP_ONLY - set(by_env)):
+        problems.append(f"egg.variables: {env} is missing; it writes server.toml when the server is created")
+    for env in sorted(RUNTIME - set(by_env)):
+        problems.append(f"egg.variables: {env} is missing; the server reads it from the environment")
+    for env in sorted(set(by_env) - SETUP_ONLY - RUNTIME):
+        problems.append(
+            f"egg.variables: {env} is neither a creation-time nor a run-time variable; "
+            "add it to SETUP_ONLY or RUNTIME in this checker"
+        )
+    for env in sorted(SETUP_ONLY):
+        var = by_env.get(env)
+        if var is None:
+            continue
+        if var.get("user_viewable") is not False or var.get("user_editable") is not False:
+            problems.append(
+                f"egg.variables[{env}]: a creation-time variable must be hidden "
+                "(user_viewable and user_editable false), or it reappears in the Startup tab"
+            )
+    for env in sorted(RUNTIME):
+        var = by_env.get(env)
+        if var is not None and var.get("user_viewable") is not True:
+            problems.append(f"egg.variables[{env}]: a run-time variable must be user_viewable")
+
+    # The renderer must read exactly the creation-time variables (plus the
+    # panel's SERVER_PORT) and nothing else, or server.toml gains a second source.
+    renderer = Path(__file__).resolve().parent.parent / "image" / "render-server-toml.sh"
+    if renderer.is_file():
+        # Only the environment reads matter: strip comments (they mention
+        # ${VAR-default} as documentation) and the script's own locals.
+        text = renderer.read_text(encoding="utf-8")
+        code = "\n".join(line for line in text.splitlines() if not line.lstrip().startswith("#"))
+        assigned = set(re.findall(r"^\s*([A-Za-z_][A-Z0-9_]*)=", code, re.MULTILINE))
+        used = set(re.findall(r"\$\{([A-Za-z_][A-Z0-9_]*)", code)) - assigned
+        for env in sorted(used - SETUP_ONLY - {"SERVER_PORT"}):
+            problems.append(
+                f"image/render-server-toml.sh: reads ${{{env}}} but it is not a creation-time "
+                "variable; server.toml would have two sources"
+            )
+        for env in sorted(SETUP_ONLY - used):
+            problems.append(f"image/render-server-toml.sh: never reads ${{{env}}}, so it does nothing")
+    else:
+        warnings.append("image/render-server-toml.sh: not found; skipped the renderer cross-check")
 
     for warning in warnings:
         print(f"warn:  {warning}")

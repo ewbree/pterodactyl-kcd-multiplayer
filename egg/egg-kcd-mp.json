@@ -30,51 +30,51 @@
   "variables": [
     {
       "name": "Server name",
-      "description": "What players see in the launcher and on the public list.",
+      "description": "What players see in the launcher and on the public list. Set when the server is created: it is written into server.toml on the first start and edited there afterwards.",
       "env_variable": "SERVER_NAME",
       "default_value": "KCD:MP server",
-      "user_viewable": true,
-      "user_editable": true,
+      "user_viewable": false,
+      "user_editable": false,
       "rules": "required|string|max:64",
       "field_type": "text"
     },
     {
       "name": "Password",
-      "description": "Players must send this to join. Empty means the server is open to anyone.",
+      "description": "Players must send this to join. Empty means the server is open to anyone. Set when the server is created: it is written into server.toml on the first start and edited there afterwards.",
       "env_variable": "SERVER_PASSWORD",
       "default_value": "",
-      "user_viewable": true,
-      "user_editable": true,
+      "user_viewable": false,
+      "user_editable": false,
       "rules": "nullable|string|max:128",
       "field_type": "text"
     },
     {
       "name": "Max players",
-      "description": "Slot count. Player ids run from 0 to this minus one. Roughly a tenth of a core and 1.5 MB/s outbound per fifty players moving and fighting at once.",
+      "description": "Slot count. Player ids run from 0 to this minus one. Roughly a tenth of a core and 1.5 MB/s outbound per fifty players moving and fighting at once. Set when the server is created: it is written into server.toml on the first start and edited there afterwards.",
       "env_variable": "MAX_PLAYERS",
       "default_value": "32",
-      "user_viewable": true,
-      "user_editable": true,
+      "user_viewable": false,
+      "user_editable": false,
       "rules": "required|integer|min:1|max:512",
       "field_type": "text"
     },
     {
       "name": "Level",
-      "description": "The level every client boots.",
+      "description": "The level every client boots. Set when the server is created: it is written into server.toml on the first start and edited there afterwards.",
       "env_variable": "LEVEL",
       "default_value": "klaster",
-      "user_viewable": true,
-      "user_editable": true,
+      "user_viewable": false,
+      "user_editable": false,
       "rules": "required|in:klaster,trosecko,kutnohorsko",
       "field_type": "text"
     },
     {
       "name": "Game mode script",
-      "description": "Path to the .lua script or compiled .dll, relative to the server folder. Empty uses the built-in freeroam mode.",
+      "description": "Path to the .lua script or compiled .dll, relative to the server folder. Empty uses the built-in freeroam mode. Set when the server is created: it is written into server.toml on the first start and edited there afterwards.",
       "env_variable": "GAMEMODE",
       "default_value": "gamemodes/freeroam.lua",
-      "user_viewable": true,
-      "user_editable": true,
+      "user_viewable": false,
+      "user_editable": false,
       "rules": "nullable|string|max:200",
       "field_type": "text"
     },
@@ -126,26 +126,6 @@
       "user_viewable": true,
       "user_editable": true,
       "rules": "nullable|string|max:300",
-      "field_type": "text"
-    },
-    {
-      "name": "Extra TOML",
-      "description": "Appended verbatim to the generated server.toml on the first start. Use it for keys the panel does not expose, e.g. a [rates] or [world] section. Existing keys are not merged: an appended table with a key already set above makes the file invalid TOML.",
-      "env_variable": "EXTRA_TOML",
-      "default_value": "",
-      "user_viewable": true,
-      "user_editable": true,
-      "rules": "nullable|string",
-      "field_type": "text"
-    },
-    {
-      "name": "Regenerate server.toml",
-      "description": "0 keeps an existing server.toml forever, so edits made in the file manager survive restarts. 1 rewrites it from these variables on every start, discarding those edits. Set it back to 0 after one restart unless you want the panel to own the whole file.",
-      "env_variable": "RENDER_TOML",
-      "default_value": "0",
-      "user_viewable": true,
-      "user_editable": true,
-      "rules": "required|in:0,1",
       "field_type": "text"
     },
     {

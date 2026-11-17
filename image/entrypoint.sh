@@ -31,7 +31,7 @@ fi
 
 # Create server.toml on the first boot only. An existing file is never
 # rewritten, so whatever the owner edits in the panel's file manager survives
-# restarts. RENDER_TOML=1 regenerates it from the panel variables.
+# restarts; deleting it makes the next boot write it again.
 /usr/local/bin/render-server-toml.sh /home/container || \
   echo "entrypoint: server.toml was not rendered; the server will fall back to its defaults." >&2
 
